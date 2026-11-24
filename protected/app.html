@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roulette Flow Master v4 — Analysis, Stats & Honest Validation</title>
+<style>
+:root{--bg:#09261c;--card:#114232;--ink:#f3ead2;--mute:#a3bfb0;--gold:#e0b04b;--line:#255c47;--red:#d9483b;--blk:#1b2226;--grn:#2ea866;--amb:#f0b429}
+*{box-sizing:border-box}
+body{margin:0 auto;background:#071f17;color:var(--ink);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:10px;max-width:480px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+button,input,select{font:inherit;color:var(--ink)}
+button{background:var(--bg);border:1px solid var(--line);border-radius:10px;cursor:pointer;font-weight:700}
+button:active{transform:scale(.97)}
+button:hover{border-color:var(--gold)}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;color:var(--mute);margin-bottom:6px;flex-wrap:wrap}
+.top b{color:var(--gold);font-size:15px}
+.pos{color:#4cc38a!important}.neg{color:#e5534b!important}.warn{color:var(--amb)!important}
+#big{font-size:26px;font-weight:900;line-height:1.15;margin:4px 0;color:var(--amb)}
+#big.wait{color:var(--mute)}
+.mute{color:var(--mute);font-size:13px}
+.slots{display:grid;grid-template-columns:repeat(11,1fr);gap:5px;margin:8px 0}
+.slot,.nc{aspect-ratio:1/1.25;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;border:2px solid var(--line);background:var(--bg);font-size:14px;line-height:1.1}
+.slot.blank{border-style:dashed;border-color:var(--gold);color:var(--gold);background:rgba(224,176,75,.1);font-size:11px}
+.slot.r,.nc.r{background:var(--red);border-color:#ff7b6e;color:#fff}
+.slot.b,.nc.b{background:var(--blk);border-color:#56656e;color:#f3ead2}
+.slot.g,.nc.g{background:var(--grn);border-color:#6ee7a4;color:#071f17}
+.slot small,.nc small{font-size:10px;opacity:.9;margin-top:2px}
+.ngrid{display:grid;grid-template-columns:repeat(13,1fr);gap:3px;margin-top:8px}
+.nc{aspect-ratio:1/1;font-size:11px;border-width:1px;border-radius:5px}
+.pad{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px}
+.pad button{padding:10px 0;font-size:15px}
+.pad button.r{border-bottom:3px solid var(--red)}
+.pad button.b{border-bottom:3px solid #6b7d87}
+.pad button.g{grid-column:span 6;background:#144d31;border-color:var(--grn);color:#9ef5c5}
+.row{display:flex;gap:8px;margin-top:8px}.row button{flex:1;padding:11px 6px;font-size:14px}
+.ghost{background:transparent;color:var(--mute)}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+th,td{padding:4px 3px;border-bottom:1px solid var(--line);text-align:left}
+td:not(:first-child),th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+tr.flag td{color:var(--gold);font-weight:700}
+.set{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;font-size:13px;margin-top:8px}
+.set label{display:flex;align-items:center;justify-content:space-between;gap:6px}
+input[type=number],select{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px;width:100px}
+details summary{cursor:pointer;color:var(--gold);font-weight:700;user-select:none}
+.scroll{max-height:260px;overflow:auto}
+.ok{color:#4cc38a}.no{color:#e5534b}
+</style>
+</head>
+<body>
+
+<!-- SUMMARY -->
+<div class="box">
+  <div class="top"><span>Spins logged: <b id="cnt">0</b></span><span>Next Bet: ₹<b id="bet">10</b></span><span>P/L: <b id="pl">0</b></span></div>
+  <div id="big" class="wait">ENTER SPINS</div>
+  <div class="mute" id="why"></div>
+  <div class="mute" id="verdictLine" style="margin-top:6px"></div>
+</div>
+
+<!-- DATA ENTRY -->
+<div class="box">
+  <div class="top"><span><b>OPEN SLOT</b> (left) → last 10 spins, newest first</span></div>
+  <div class="slots" id="slots"></div>
+  <div class="pad" id="pad"></div>
+  <div class="row">
+    <button class="ghost" data-action="undo-spin">⌫ Undo Last Spin</button>
+    <button class="ghost" data-action="clear-spins">Clear All Spins</button>
+  </div>
+</div>
+
+<!-- MODULE 1+3: HISTORICAL + STATISTICAL -->
+<div class="box">
+  <div class="top"><span><b>1 · HISTORY & STATS</b> window:</span>
+    <select id="view"><option value="10">Last 10</option><option value="50">Last 50</option><option value="100">Last 100</option><option value="500">Last 500</option><option value="all">All</option></select>
+  </div>
+  <div class="mute" id="winInfo"></div>
+  <table><thead><tr><th>Market</th><th>Hits</th><th>Obs %</th><th>Exp %</th><th>z</th></tr></thead><tbody id="distBody"></tbody></table>
+  <div class="mute" style="margin-top:6px">z is shown from 30 spins. |z|&gt;2 is highlighted, but with 12 markets about one flag appears by pure luck. Treat flags as noise unless they repeat on fresh spins.</div>
+  <div class="top" style="margin-top:10px"><span><b>Pocket frequency</b> (0 first, then 1–36)</span></div>
+  <div class="ngrid" id="ngrid"></div>
+  <div class="mute" id="chi" style="margin-top:8px"></div>
+</div>
+
+<!-- MODULE 2: PATTERNS -->
+<div class="box">
+  <div class="top"><span><b>2 · PATTERNS</b> (descriptive only, not signals)</span></div>
+  <table><thead><tr><th>Market</th><th>Current streak</th><th>Longest in window</th><th>Switches %</th></tr></thead><tbody id="patBody"></tbody></table>
+</div>
+
+<!-- MODULE 4: EVALUATION -->
+<div class="box">
+  <div class="top"><span><b>3 · PREDICTION TEST</b> (walk-forward: each guess uses only earlier spins)</span></div>
+  <table><thead><tr><th>Bet type</th><th>Hits</th><th>Rate</th><th>Chance</th><th>95% range</th></tr></thead><tbody id="evBody"></tbody></table>
+  <div class="mute" id="evNote" style="margin-top:6px"></div>
+</div>
+
+<div class="box">
+  <details>
+    <summary>Prediction audit log (last 25)</summary>
+    <div class="mute" style="margin-top:6px">Rebuilt from your spin history with the current engine settings, so it is fully reproducible.</div>
+    <div class="scroll"><table><thead><tr><th>#</th><th>Time</th><th>Guess</th><th>Result</th><th>Side</th><th>Number</th></tr></thead><tbody id="logBody"></tbody></table></div>
+  </details>
+</div>
+
+<!-- BANKROLL -->
+<div class="box">
+  <div class="top" style="margin-bottom:6px"><span>Session Bankroll Tracker (optional)</span></div>
+  <div class="row" style="margin-top:0">
+    <button data-action="log-bank" data-outcome="w" class="pos">Win (+1x)</button>
+    <button data-action="log-bank" data-outcome="l" class="neg">Lose (-1x)</button>
+    <button data-action="log-bank" data-outcome="g" class="warn">0 Hit (-1x)</button>
+  </div>
+  <div class="row">
+    <button class="ghost" data-action="undo-bank">Undo P/L</button>
+    <button class="ghost" data-action="reset-bank">Reset P/L</button>
+  </div>
+  <div class="mute" id="evLoss" style="margin-top:6px"></div>
+</div>
+
+<div class="box">
+  <details>
+    <summary>Engine & Stake Settings</summary>
+    <div class="set">
+      <label>Min spins to guess <input type="number" id="minSpins" min="2" max="50"></label>
+      <label>Engine window <input type="number" id="win" min="10" max="100"></label>
+      <label>Flow logic <select id="flow"><option value="adaptive">Adaptive</option><option value="trend">Follow trend</option><option value="chop">Fade / chop</option></select></label>
+      <label>Base unit (₹) <input type="number" id="base" min="1"></label>
+      <label>Stop-loss (₹) <input type="number" id="stop" min="10"></label>
+    </div>
+    <div class="mute" style="margin-top:8px">Custom Red set: 0 = Green; 1–12 Red [1,3,5,7,9,12]; 13–24 Red [14,16,18,19,21,23]; 25–36 Red [25,27,30,32,34,36]; remaining 1–36 = Black.</div>
+  </details>
+</div>
+
+<script>
+const $=id=>document.getElementById(id),K='rfm_v4',CAP=2000;
+const RED=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+let S={minSpins:5,win:50,flow:'adaptive',base:10,stop:150,view:'50'};
+let spins=[],ts=[],pl=0,bank=[];
+try{const x=JSON.parse(localStorage.getItem(K)||'null');if(x){Object.assign(S,x.S||{});spins=x.spins||[];ts=x.ts||[];pl=x.pl||0;}}catch(e){}
+if(ts.length!==spins.length)ts=spins.map(()=>0);
+const save=()=>{try{localStorage.setItem(K,JSON.stringify({S,spins,ts,pl}))}catch(e){}};
+
+const colorOf=n=>n===0?'g':(RED.has(n)?'r':'b');
+const M=[
+{k:'RED',l:'Red',p:18/37,f:x=>x!==0&&RED.has(x)},
+{k:'BLK',l:'Black',p:18/37,f:x=>x!==0&&!RED.has(x)},
+{k:'ZER',l:'Zero (0)',p:1/37,f:x=>x===0},
+{k:'ODD',l:'Odd',p:18/37,f:x=>x!==0&&x%2===1},
+{k:'EVEN',l:'Even',p:18/37,f:x=>x!==0&&x%2===0},
+{k:'LOW',l:'1–18',p:18/37,f:x=>x>=1&&x<=18},
+{k:'HIGH',l:'19–36',p:18/37,f:x=>x>=19},
+{k:'D1',l:'1st dozen',p:12/37,f:x=>x>=1&&x<=12},
+{k:'D2',l:'2nd dozen',p:12/37,f:x=>x>=13&&x<=24},
+{k:'D3',l:'3rd dozen',p:12/37,f:x=>x>=25},
+{k:'C1',l:'Column 1',p:12/37,f:x=>x!==0&&x%3===1},
+{k:'C2',l:'Column 2',p:12/37,f:x=>x!==0&&x%3===2},
+{k:'C3',l:'Column 3',p:12/37,f:x=>x!==0&&x%3===0}
+];
+const mk=k=>M.find(m=>m.k===k);
+
+/* ---------- math helpers ---------- */
+function erf(x){const s=x<0?-1:1;x=Math.abs(x);const t=1/(1+0.3275911*x);
+ const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return s*y;}
+const cdf=z=>0.5*(1+erf(z/Math.SQRT2));
+const zScore=(h,n,p)=>(h-n*p)/Math.sqrt(n*p*(1-p));
+function wilson(h,n){if(!n)return[0,0];const z=1.96,p=h/n,d=1+z*z/n,c=p+z*z/(2*n),a=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n));return[(c-a)/d,(c+a)/d];}
+const pct=(x,d=1)=>(x*100).toFixed(d)+'%';
+
+/* ---------- input ---------- */
+const pad=$('pad');
+const g0=document.createElement('button');g0.textContent='0 (Green)';g0.className='g';g0.onclick=()=>addSpin(0);pad.appendChild(g0);
+for(let n=1;n<=36;n++){const b=document.createElement('button');b.textContent=n;b.className=colorOf(n);b.onclick=()=>addSpin(n);pad.appendChild(b);}
+
+function addSpin(n){spins.push(n);ts.push(Date.now());if(spins.length>CAP){spins.shift();ts.shift();}save();render();}
+function undoSpin(){if(!spins.length)return;spins.pop();ts.pop();save();render();}
+function clearAll(){if(!spins.length||!confirm('Clear ALL spins, stats and prediction history?'))return;spins=[];ts=[];save();render();}
+
+function nextBet(){return pl<=-S.stop?0:S.base;}
+function logBank(k){const b=nextBet();if(b<=0)return;bank.push(pl);pl=k==='w'?pl+b:pl-b;save();render();}
+function undoBank(){if(!bank.length)return;pl=bank.pop();save();render();}
+function resetBank(){pl=0;bank=[];save();render();}
+
+document.addEventListener('click',e=>{
+  if(!(e.target instanceof Element))return;
+  const button=e.target.closest('[data-action]');
+  if(!button)return;
+  switch(button.dataset.action){
+    case'undo-spin':undoSpin();break;
+    case'clear-spins':clearAll();break;
+    case'log-bank':logBank(button.dataset.outcome);break;
+    case'undo-bank':undoBank();break;
+    case'reset-bank':resetBank();break;
+  }
+});
+
+const LIM={minSpins:[2,50],win:[10,100],base:[1,1e6],stop:[10,1e7]};
+['minSpins','win','base','stop'].forEach(id=>$(id).onchange=()=>{const[lo,hi]=LIM[id];S[id]=Math.min(hi,Math.max(lo,Math.round(+$(id).value||lo)));save();render();});
+$('flow').onchange=()=>{S.flow=$('flow').value;save();render();};
+$('view').onchange=()=>{S.view=$('view').value;save();render();};
+
+/* ---------- MODULE 2: patterns ---------- */
+function streak(s,pred){let k=0;for(const x of s){if(pred(x))k++;else break;}return k;} // s newest-first
+function alt(s,pA,pB){const q=s.filter(x=>x!==0).map(x=>pA(x)?'A':'B');if(q.length<2)return 0;let f=0;for(let i=0;i<q.length-1;i++)if(q[i]!==q[i+1])f++;return f/(q.length-1);}
+
+/* ---------- predictor (pure: uses only spins before `end`) ---------- */
+const GROUPS=[['RED','BLK'],['ODD','EVEN'],['LOW','HIGH']];
+function predict(arr,end){
+  if(end<S.minSpins)return null;
+  const s=arr.slice(Math.max(0,end-S.win),end).reverse();
+  let best=null;
+  for(const[a,b]of GROUPS){
+    const A=mk(a),B=mk(b),pA=x=>A.f(x),pB=x=>B.f(x);
+    const cA=s.filter(pA).length,cB=s.filter(pB).length,sA=streak(s,pA),sB=streak(s,pB),ch=alt(s,pA,pB);
+    const dir=S.flow==='adaptive'?((ch>=.72&&Math.max(sA,sB)<2)?'chop':'trend'):S.flow;
+    let t,str;
+    if(dir==='chop'){const last=s.find(x=>x!==0);t=(last!==undefined&&pA(last))?B:A;str=ch+.25;}
+    else{const aS=sA>sB||(sA===sB&&cA>=cB);t=aS?A:B;str=(aS?sA:sB)*.45+(aS?cA:cB)/Math.max(1,s.length);}
+    if(!best||str>best.str)best={code:t.k,label:t.l,dir,str,dim:A.l+' / '+B.l};
+  }
+  const c=new Map(),fi=new Map();
+  s.forEach((v,i)=>{c.set(v,(c.get(v)||0)+1);if(!fi.has(v))fi.set(v,i);});
+  let num=null,bc=1;
+  for(const[v,k]of c){if(k>bc||(k===bc&&num!==null&&fi.get(v)<fi.get(num))){num=v;bc=k;}}
+  return{...best,num,numCount:num===null?0:bc};
+}
+
+/* ---------- MODULE 4: walk-forward evaluation ---------- */
+function backtest(){
+  const rows=[];
+  for(let t=S.minSpins;t<spins.length;t++){
+    const p=predict(spins,t),r=spins[t];
+    rows.push({i:t,ts:ts[t],p,r,so:mk(p.code).f(r),no:p.num===null?null:r===p.num});
+  }
+  return rows;
+}
+function verdict(h,n,p0,minN){
+  if(n<minN)return{t:`need ${minN}+ guesses (have ${n})`,c:'mute'};
+  const z=zScore(h,n,p0),pv=2*(1-cdf(Math.abs(z)));
+  if(z<=-2)return{t:`worse than chance (z=${z.toFixed(2)}, p=${pv.toFixed(3)})`,c:'neg'};
+  if(z>=2)return{t:`above chance (z=${z.toFixed(2)}, p=${pv.toFixed(3)}) — likely luck; retest on fresh spins`,c:'warn'};
+  return{t:`no evidence of edge (z=${z.toFixed(2)})`,c:'mute'};
+}
+
+/* ---------- render ---------- */
+function render(){
+  for(const id of['minSpins','win','base','stop'])$(id).value=S[id];
+  $('flow').value=S.flow;$('view').value=S.view;
+
+  // slots
+  let h=`<div class="slot blank">NEXT<small>OPEN</small></div>`;
+  const rev=spins.slice().reverse();
+  for(let i=0;i<10;i++){
+    if(i<rev.length){const v=rev[i],c=colorOf(v);h+=`<div class="slot ${c}">${v}<small>${v===0?'G':c==='r'?'R':'B'}</small></div>`;}
+    else h+=`<div class="slot" style="opacity:.35">–</div>`;
+  }
+  $('slots').innerHTML=h;
+
+  const n=spins.length;
+  $('cnt').textContent=n;
+  const b=nextBet();
+  $('bet').textContent=b===0?'STOP':b;
+  $('pl').textContent=(pl>=0?'+₹':'-₹')+Math.abs(pl);$('pl').className=pl>=0?'pos':'neg';
+  $('evLoss').textContent=`Maths: every even-money bet loses 2.70% on average, about ₹${(S.base/37).toFixed(2)} per ₹${S.base} spin. No pattern or staking plan changes this.`;
+
+  // evaluation
+  const rows=backtest();
+  const sN=rows.length,sH=rows.filter(r=>r.so).length;
+  const nr=rows.filter(r=>r.no!==null),nN=nr.length,nH=nr.filter(r=>r.no).length;
+  const sv=verdict(sH,sN,18/37,50),nv=verdict(nH,nN,1/37,200);
+  const [sl,sh]=wilson(sH,sN),[nl,nh]=wilson(nH,nN);
+  $('evBody').innerHTML=
+   `<tr><td>Side (colour/parity/range)</td><td>${sH}/${sN}</td><td>${sN?pct(sH/sN):'–'}</td><td>48.6%</td><td>${sN?pct(sl)+' – '+pct(sh):'–'}</td></tr>`+
+   `<tr><td>Repeat number</td><td>${nH}/${nN}</td><td>${nN?pct(nH/nN):'–'}</td><td>2.7%</td><td>${nN?pct(nl)+' – '+pct(nh):'–'}</td></tr>`;
+  $('evNote').innerHTML=`Side: <span class="${sv.c}">${sv.t}</span><br>Number: <span class="${nv.c}">${nv.t}</span><br>If the chance rate sits inside the 95% range, results are indistinguishable from random guessing.`;
+
+  // summary
+  const pr=predict(spins,n),big=$('big'),why=$('why');
+  if(b===0){big.textContent='STOP-LOSS REACHED';big.className='neg';why.textContent='Stop-loss hit. Stop betting; reset P/L only when you start a fresh session.';}
+  else if(!pr){const need=Math.max(1,S.minSpins-n);big.textContent=`LOG ${need} MORE SPIN${need>1?'S':''}`;big.className='wait';why.textContent='Not enough history to make a guess.';}
+  else{
+    big.textContent=`GUESS: ${pr.label.toUpperCase()}`+(pr.num!==null?`  ·  #${pr.num}`:'');big.className='';
+    why.textContent=`${pr.dim} ${pr.dir==='chop'?'alternation':'trend'} in the last ${Math.min(S.win,n)} spins${pr.num!==null?`; #${pr.num} repeated ${pr.numCount}x`:''}. This is a pattern read, not a prediction: the wheel has no memory.`;
+  }
+  $('verdictLine').innerHTML=`Engine check: <span class="${sv.c}">${sv.t}</span>`;
+
+  // distribution
+  const sel=S.view==='all'?spins:spins.slice(-(+S.view)),m=sel.length;
+  $('winInfo').textContent=`Showing ${m} spin${m===1?'':'s'}${S.view!=='all'&&m<+S.view?` (fewer than the ${S.view} selected)`:''}.`;
+  $('distBody').innerHTML=M.map(mm=>{
+    const hh=sel.filter(mm.f).length,z=m>=30?zScore(hh,m,mm.p):null;
+    return`<tr class="${z!==null&&Math.abs(z)>2?'flag':''}"><td>${mm.l}</td><td>${hh}</td><td>${m?pct(hh/m):'–'}</td><td>${pct(mm.p)}</td><td>${z===null?'–':z.toFixed(2)}</td></tr>`;
+  }).join('');
+
+  // pocket frequency + chi-square
+  const cnt=Array(37).fill(0);sel.forEach(x=>cnt[x]++);
+  const mx=Math.max(1,...cnt);
+  $('ngrid').innerHTML=cnt.map((c,i)=>`<div class="nc ${colorOf(i)}" style="opacity:${(.35+.65*c/mx).toFixed(2)}">${i}<small>${c}</small></div>`).join('');
+  if(m>=185){
+    let chi=0;const e=m/37;cnt.forEach(o=>chi+=(o-e)*(o-e)/e);
+    const k=36,z=(Math.pow(chi/k,1/3)-(1-2/(9*k)))/Math.sqrt(2/(9*k)),pv=1-cdf(z);
+    $('chi').innerHTML=`Fairness test (chi-square, 36 df): χ²=${chi.toFixed(1)}, p≈${pv.toFixed(3)}. ${pv<0.01?'<span class="warn">Unusual skew. Could be a biased wheel or a data entry error; check your inputs first.</span>':'No evidence the wheel is biased.'}`;
+  }else $('chi').textContent=`Wheel fairness test needs 185+ spins in the window (5 expected per pocket); you have ${m}.`;
+
+  // patterns
+  const pm=['RED','BLK','ODD','EVEN','LOW','HIGH'].map(mk);
+  const newest=sel.slice().reverse();
+  $('patBody').innerHTML=pm.map(mm=>{
+    let cur=streak(newest,mm.f),lg=0,r=0;sel.forEach(x=>{if(mm.f(x)){r++;lg=Math.max(lg,r);}else r=0;});
+    const opp=mk({RED:'BLK',BLK:'RED',ODD:'EVEN',EVEN:'ODD',LOW:'HIGH',HIGH:'LOW'}[mm.k]);
+    const sw=alt(newest,x=>mm.f(x),x=>opp.f(x));
+    return`<tr><td>${mm.l}</td><td>${cur}</td><td>${lg}</td><td>${m>1?pct(sw,0):'–'}</td></tr>`;
+  }).join('');
+
+  // audit log
+  $('logBody').innerHTML=rows.slice(-25).reverse().map(r=>{
+    const tm=r.ts?new Date(r.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'–';
+    return`<tr><td>${r.i+1}</td><td>${tm}</td><td>${r.p.label}${r.p.num!==null?' · #'+r.p.num:''}</td><td>${r.r}</td><td class="${r.so?'ok':'no'}">${r.so?'✓':'✗'}</td><td class="${r.no===null?'':r.no?'ok':'no'}">${r.no===null?'–':r.no?'✓':'✗'}</td></tr>`;
+  }).join('')||'<tr><td colspan="6" class="mute">No graded guesses yet.</td></tr>';
+}
+render();
+</script>
+</body>
+</html>

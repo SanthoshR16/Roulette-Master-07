@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roulette Flow Master — Login</title>
+<style>
+:root{--bg:#09261c;--card:#114232;--ink:#f3ead2;--mute:#a3bfb0;--gold:#e0b04b;--line:#255c47;--red:#d9483b}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#071f17;
+  color:var(--ink);
+  font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  padding:16px;
+}
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:24px 20px;
+  width:100%;
+  max-width:380px;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+h1{
+  margin:0;
+  font-size:20px;
+  font-weight:800;
+  color:var(--gold);
+  text-align:center;
+}
+.field{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+label{
+  font-size:13px;
+  color:var(--mute);
+}
+input[type=password]{
+  width:100%;
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:10px 12px;
+  color:var(--ink);
+  font:inherit;
+  outline:none;
+}
+input[type=password]:focus{
+  border-color:var(--gold);
+}
+button{
+  background:var(--bg);
+  color:var(--gold);
+  border:1px solid var(--gold);
+  border-radius:8px;
+  padding:11px;
+  font:inherit;
+  font-weight:700;
+  cursor:pointer;
+  transition:all .15s ease;
+}
+button:hover{
+  background:var(--gold);
+  color:#071f17;
+}
+button:active{
+  transform:scale(.98);
+}
+.error{
+  color:#fff;
+  background:rgba(217,72,59,.2);
+  border:1px solid var(--red);
+  border-radius:6px;
+  padding:8px 10px;
+  font-size:13px;
+  display:none;
+  text-align:center;
+}
+.note{
+  color:var(--mute);
+  font-size:12px;
+  line-height:1.45;
+  text-align:center;
+  border-top:1px solid var(--line);
+  padding-top:14px;
+  margin:0;
+}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Roulette Flow Master</h1>
+  <form id="loginForm" class="field">
+    <label for="keyInput">Access Key</label>
+    <input type="password" id="keyInput" autocomplete="current-password" placeholder="Enter key" required autofocus>
+    <button type="submit" id="submitBtn">Enter</button>
+  </form>
+  <div id="errorArea" class="error"></div>
+  <p class="note">This tool tracks and analyses spins. It does not predict outcomes; roulette spins are independent.</p>
+</div>
+
+<script>
+async function handleLogin(e) {
+  e.preventDefault();
+  const input = document.getElementById('keyInput');
+  const btn = document.getElementById('submitBtn');
+  const errorArea = document.getElementById('errorArea');
+  errorArea.style.display = 'none';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: input.value })
+    });
+    if (res.ok) {
+      window.location.href = '/app';
+    } else {
+      const data = await res.json().catch(() => ({}));
+      errorArea.textContent = data.error || 'Invalid access key';
+      errorArea.style.display = 'block';
+      input.select();
+    }
+  } catch (err) {
+    errorArea.textContent = 'Connection error. Please try again.';
+    errorArea.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('loginForm').addEventListener('submit', handleLogin);
+</script>
+</body>
+</html>
