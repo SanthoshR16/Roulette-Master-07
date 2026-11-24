@@ -45,14 +45,16 @@ input[type=number],select{background:var(--bg);border:1px solid var(--line);bord
 details summary{cursor:pointer;color:var(--gold);font-weight:700;user-select:none}
 .scroll{max-height:260px;overflow:auto}
 .ok{color:#4cc38a}.no{color:#e5534b}
+.daily-stop{color:#ff8b7b!important;font-weight:900}
+[disabled]{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
 
 <!-- SUMMARY -->
 <div class="box">
-  <div class="top"><span>Spins logged: <b id="cnt">0</b></span><span>Next Bet: ₹<b id="bet">10</b></span><span>P/L: <b id="pl">0</b></span></div>
-  <div id="big" class="wait">ENTER SPINS</div>
+  <div class="top"><span>Spins logged: <b id="cnt">0</b></span><span>Next Bet: ₹<b id="bet">10</b></span><span>Today P/L: <b id="pl">₹0</b></span></div>
+  <div id="big" class="wait">NO RELIABLE PICK</div>
   <div class="mute" id="why"></div>
   <div class="mute" id="verdictLine" style="margin-top:6px"></div>
 </div>
@@ -89,7 +91,7 @@ details summary{cursor:pointer;color:var(--gold);font-weight:700;user-select:non
 
 <!-- MODULE 4: EVALUATION -->
 <div class="box">
-  <div class="top"><span><b>3 · PREDICTION TEST</b> (walk-forward: each guess uses only earlier spins)</span></div>
+  <div class="top"><span><b>3 · HEURISTIC BACKTEST</b> (walk-forward: each test guess uses only earlier spins)</span></div>
   <table><thead><tr><th>Bet type</th><th>Hits</th><th>Rate</th><th>Chance</th><th>95% range</th></tr></thead><tbody id="evBody"></tbody></table>
   <div class="mute" id="evNote" style="margin-top:6px"></div>
 </div>
@@ -97,14 +99,14 @@ details summary{cursor:pointer;color:var(--gold);font-weight:700;user-select:non
 <div class="box">
   <details>
     <summary>Prediction audit log (last 25)</summary>
-    <div class="mute" style="margin-top:6px">Rebuilt from your spin history with the current engine settings, so it is fully reproducible.</div>
+    <div class="mute" style="margin-top:6px">Rebuilt from your spin history with the current engine settings. These are historical heuristic guesses, not reliable betting signals.</div>
     <div class="scroll"><table><thead><tr><th>#</th><th>Time</th><th>Guess</th><th>Result</th><th>Side</th><th>Number</th></tr></thead><tbody id="logBody"></tbody></table></div>
   </details>
 </div>
 
 <!-- BANKROLL -->
 <div class="box">
-  <div class="top" style="margin-bottom:6px"><span>Session Bankroll Tracker (optional)</span></div>
+  <div class="top" style="margin-bottom:6px"><span>Daily Bankroll Tracker (optional; first win stops play for today)</span></div>
   <div class="row" style="margin-top:0">
     <button data-action="log-bank" data-outcome="w" class="pos">Win (+1x)</button>
     <button data-action="log-bank" data-outcome="l" class="neg">Lose (-1x)</button>
@@ -121,7 +123,7 @@ details summary{cursor:pointer;color:var(--gold);font-weight:700;user-select:non
   <details>
     <summary>Engine & Stake Settings</summary>
     <div class="set">
-      <label>Min spins to guess <input type="number" id="minSpins" min="2" max="50"></label>
+      <label>Min spins for backtest <input type="number" id="minSpins" min="2" max="50"></label>
       <label>Engine window <input type="number" id="win" min="10" max="100"></label>
       <label>Flow logic <select id="flow"><option value="adaptive">Adaptive</option><option value="trend">Follow trend</option><option value="chop">Fade / chop</option></select></label>
       <label>Base unit (₹) <input type="number" id="base" min="1"></label>
@@ -135,10 +137,17 @@ details summary{cursor:pointer;color:var(--gold);font-weight:700;user-select:non
 const $=id=>document.getElementById(id),K='rfm_v4',CAP=2000;
 const RED=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 let S={minSpins:5,win:50,flow:'adaptive',base:10,stop:150,view:'50'};
-let spins=[],ts=[],pl=0,bank=[];
-try{const x=JSON.parse(localStorage.getItem(K)||'null');if(x){Object.assign(S,x.S||{});spins=x.spins||[];ts=x.ts||[];pl=x.pl||0;}}catch(e){}
+const localDateKey=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+let spins=[],ts=[],pl=0,bank=[],dailyStopDate=null,plDate=localDateKey();
+try{const x=JSON.parse(localStorage.getItem(K)||'null');if(x){
+  Object.assign(S,x.S||{});spins=x.spins||[];ts=x.ts||[];dailyStopDate=x.dailyStopDate||null;
+  if(x.plDate&&x.plDate!==localDateKey()){pl=0;bank=[];plDate=x.plDate;}
+  else{pl=x.pl||0;bank=x.bank||[];plDate=x.plDate||localDateKey();}
+}}catch(e){}
 if(ts.length!==spins.length)ts=spins.map(()=>0);
-const save=()=>{try{localStorage.setItem(K,JSON.stringify({S,spins,ts,pl}))}catch(e){}};
+const save=()=>{try{localStorage.setItem(K,JSON.stringify({S,spins,ts,pl,bank,dailyStopDate,plDate}))}catch(e){}};
+const stoppedForToday=()=>dailyStopDate===localDateKey();
+function rollDailyState(){const today=localDateKey();if(plDate!==today){pl=0;bank=[];plDate=today;save();}}
 
 const colorOf=n=>n===0?'g':(RED.has(n)?'r':'b');
 const M=[
@@ -171,14 +180,14 @@ const pad=$('pad');
 const g0=document.createElement('button');g0.textContent='0 (Green)';g0.className='g';g0.onclick=()=>addSpin(0);pad.appendChild(g0);
 for(let n=1;n<=36;n++){const b=document.createElement('button');b.textContent=n;b.className=colorOf(n);b.onclick=()=>addSpin(n);pad.appendChild(b);}
 
-function addSpin(n){spins.push(n);ts.push(Date.now());if(spins.length>CAP){spins.shift();ts.shift();}save();render();}
-function undoSpin(){if(!spins.length)return;spins.pop();ts.pop();save();render();}
-function clearAll(){if(!spins.length||!confirm('Clear ALL spins, stats and prediction history?'))return;spins=[];ts=[];save();render();}
+function addSpin(n){if(stoppedForToday())return;spins.push(n);ts.push(Date.now());if(spins.length>CAP){spins.shift();ts.shift();}save();render();}
+function undoSpin(){if(stoppedForToday()||!spins.length)return;spins.pop();ts.pop();save();render();}
+function clearAll(){if(stoppedForToday()||!spins.length||!confirm('Clear ALL spins, stats and prediction history?'))return;spins=[];ts=[];save();render();}
 
-function nextBet(){return pl<=-S.stop?0:S.base;}
-function logBank(k){const b=nextBet();if(b<=0)return;bank.push(pl);pl=k==='w'?pl+b:pl-b;save();render();}
-function undoBank(){if(!bank.length)return;pl=bank.pop();save();render();}
-function resetBank(){pl=0;bank=[];save();render();}
+function nextBet(){rollDailyState();return stoppedForToday()||pl<=-S.stop?0:S.base;}
+function logBank(k){if(stoppedForToday())return;const b=nextBet();if(b<=0)return;bank.push(pl);pl=k==='w'?pl+b:pl-b;if(k==='w')dailyStopDate=localDateKey();save();render();}
+function undoBank(){if(stoppedForToday()||!bank.length)return;pl=bank.pop();save();render();}
+function resetBank(){if(stoppedForToday())return;pl=0;bank=[];save();render();}
 
 document.addEventListener('click',e=>{
   if(!(e.target instanceof Element))return;
@@ -243,6 +252,7 @@ function verdict(h,n,p0,minN){
 
 /* ---------- render ---------- */
 function render(){
+  rollDailyState();
   for(const id of['minSpins','win','base','stop'])$(id).value=S[id];
   $('flow').value=S.flow;$('view').value=S.view;
 
@@ -258,8 +268,11 @@ function render(){
   const n=spins.length;
   $('cnt').textContent=n;
   const b=nextBet();
+  const locked=stoppedForToday();
   $('bet').textContent=b===0?'STOP':b;
   $('pl').textContent=(pl>=0?'+₹':'-₹')+Math.abs(pl);$('pl').className=pl>=0?'pos':'neg';
+  for(const button of pad.querySelectorAll('button'))button.disabled=locked;
+  for(const button of document.querySelectorAll('[data-action]'))button.disabled=locked;
   $('evLoss').textContent=`Maths: every even-money bet loses 2.70% on average, about ₹${(S.base/37).toFixed(2)} per ₹${S.base} spin. No pattern or staking plan changes this.`;
 
   // evaluation
@@ -274,13 +287,10 @@ function render(){
   $('evNote').innerHTML=`Side: <span class="${sv.c}">${sv.t}</span><br>Number: <span class="${nv.c}">${nv.t}</span><br>If the chance rate sits inside the 95% range, results are indistinguishable from random guessing.`;
 
   // summary
-  const pr=predict(spins,n),big=$('big'),why=$('why');
-  if(b===0){big.textContent='STOP-LOSS REACHED';big.className='neg';why.textContent='Stop-loss hit. Stop betting; reset P/L only when you start a fresh session.';}
-  else if(!pr){const need=Math.max(1,S.minSpins-n);big.textContent=`LOG ${need} MORE SPIN${need>1?'S':''}`;big.className='wait';why.textContent='Not enough history to make a guess.';}
-  else{
-    big.textContent=`GUESS: ${pr.label.toUpperCase()}`+(pr.num!==null?`  ·  #${pr.num}`:'');big.className='';
-    why.textContent=`${pr.dim} ${pr.dir==='chop'?'alternation':'trend'} in the last ${Math.min(S.win,n)} spins${pr.num!==null?`; #${pr.num} repeated ${pr.numCount}x`:''}. This is a pattern read, not a prediction: the wheel has no memory.`;
-  }
+  const big=$('big'),why=$('why');
+  if(locked){big.textContent='STOP FOR TODAY';big.className='daily-stop';why.textContent='You logged a win today. Spin entry and bankroll controls are locked until tomorrow; your history and stats remain available.';}
+  else if(b===0){big.textContent='STOP-LOSS REACHED';big.className='neg';why.textContent='Stop-loss hit. Stop betting; reset P/L only when you start a fresh session.';}
+  else{big.textContent='NO RELIABLE PICK';big.className='warn';why.textContent='Roulette spins are independent. Past results cannot reliably predict the next spin: an even-money bet wins 18/37 (48.65%); any exact number wins 1/37 (2.70%). Historical patterns are for testing only, not betting signals.';}
   $('verdictLine').innerHTML=`Engine check: <span class="${sv.c}">${sv.t}</span>`;
 
   // distribution
@@ -318,6 +328,7 @@ function render(){
   }).join('')||'<tr><td colspan="6" class="mute">No graded guesses yet.</td></tr>';
 }
 render();
+setInterval(render,60000);
 </script>
 </body>
 </html>
