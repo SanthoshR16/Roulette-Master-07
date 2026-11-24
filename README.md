@@ -5,7 +5,7 @@ A minimal, secure Node.js (v20+) wrapper serving Roulette Flow Master behind a s
 ## Features
 - **Zero data stored on server**: Spin history remains strictly in browser `localStorage`.
 - **Timing-safe authentication**: Key verification uses `crypto.timingSafeEqual` over SHA-256 digests.
-- **HMAC signed sessions**: `rfm_session` cookies are signed with `COOKIE_SECRET` and invalidated if `ACCESS_KEY` changes or the server restarts.
+- **One-time HMAC login**: the signed login cookie is consumed when `/app` loads. Refreshes, server restarts, and other devices require the access key again.
 - **Hardened security**: Helmet CSP (inline scripts/styles allowed, all external network requests blocked), rate-limited login (5 attempts/min), `Cache-Control: no-store`, `X-Robots-Tag: noindex`.
 - **Render ready**: `trust proxy: 1`, `/healthz` health check endpoint.
 

@@ -9,6 +9,7 @@ require('dotenv').config();
 
 const { ACCESS_KEY, COOKIE_SECRET, PORT = 3007 } = process.env;
 const sessionEpoch = crypto.randomBytes(32).toString('hex');
+const consumedSessions = new Map();
 
 if (!ACCESS_KEY || !COOKIE_SECRET) {
   console.error('Fatal: ACCESS_KEY and COOKIE_SECRET environment variables are required.');
@@ -56,9 +57,10 @@ const currentKeyHash = getKeyHash(ACCESS_KEY);
 
 function createSessionToken() {
   const payload = JSON.stringify({
-    exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    exp: Date.now() + 5 * 60 * 1000,
     keyHash: currentKeyHash,
-    sessionEpoch
+    sessionEpoch,
+    sessionId: crypto.randomBytes(16).toString('hex')
   });
   const data = Buffer.from(payload).toString('base64url');
   const sig = crypto.createHmac('sha256', COOKIE_SECRET).update(data).digest('base64url');
@@ -81,25 +83,41 @@ function verifySession(token) {
 
   try {
     const payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
-    if (payload.sessionEpoch !== sessionEpoch || !payload.exp || Date.now() > payload.exp) return false;
+    const now = Date.now();
+    for (const [sessionId, expiresAt] of consumedSessions) {
+      if (expiresAt <= now) consumedSessions.delete(sessionId);
+    }
+
+    if (
+      payload.sessionEpoch !== sessionEpoch ||
+      typeof payload.sessionId !== 'string' ||
+      consumedSessions.has(payload.sessionId) ||
+      !payload.exp ||
+      now > payload.exp
+    ) return null;
 
     const payloadHashBuf = Buffer.from(payload.keyHash || '');
     const expectedHashBuf = Buffer.from(currentKeyHash);
     if (payloadHashBuf.length !== expectedHashBuf.length || !crypto.timingSafeEqual(payloadHashBuf, expectedHashBuf)) {
-      return false;
+      return null;
     }
 
-    return true;
+    return { sessionId: payload.sessionId, expiresAt: payload.exp };
   } catch {
-    return false;
+    return null;
   }
+}
+
+function clearSessionCookie(req, res) {
+  res.clearCookie('rfm_session', {
+    httpOnly: true,
+    secure: req.secure,
+    sameSite: 'strict'
+  });
 }
 
 // 1. GET / : public login page
 app.get('/', (req, res) => {
-  if (verifySession(req.cookies.rfm_session)) {
-    return res.redirect('/app');
-  }
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
@@ -117,7 +135,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
     httpOnly: true,
     secure: req.secure,
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    maxAge: 5 * 60 * 1000
   });
 
   res.json({ ok: true });
@@ -125,9 +143,12 @@ app.post('/api/login', loginLimiter, (req, res) => {
 
 // 3. GET /app : protected app
 app.get('/app', (req, res) => {
-  if (!verifySession(req.cookies.rfm_session)) {
+  const session = verifySession(req.cookies.rfm_session);
+  if (!session) {
     return res.redirect('/');
   }
+  consumedSessions.set(session.sessionId, session.expiresAt);
+  clearSessionCookie(req, res);
   res.set({
     'Cache-Control': 'no-store',
     'X-Robots-Tag': 'noindex'
@@ -137,21 +158,13 @@ app.get('/app', (req, res) => {
 
 // 4. POST /api/logout : clear session cookie
 app.post('/api/logout', (req, res) => {
-  res.clearCookie('rfm_session', {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'strict'
-  });
+  clearSessionCookie(req, res);
   res.json({ ok: true });
 });
 
 // Logout convenience endpoint for browser navigation
 app.get('/logout', (req, res) => {
-  res.clearCookie('rfm_session', {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'strict'
-  });
+  clearSessionCookie(req, res);
   res.redirect('/');
 });
 
