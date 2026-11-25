@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Roulette Flow Master v4 — Analysis, Stats & Honest Validation</title>
+<title>Roulette Flow Master v4.2 — Analysis, Stats & Honest Validation</title>
 <style>
 :root{--bg:#09261c;--card:#114232;--ink:#f3ead2;--mute:#a3bfb0;--gold:#e0b04b;--line:#255c47;--red:#d9483b;--blk:#1b2226;--grn:#2ea866;--amb:#f0b429}
 *{box-sizing:border-box}
@@ -142,7 +142,7 @@ let spins=[],ts=[],pl=0,bank=[],dailyStopDate=null,plDate=localDateKey();
 try{const x=JSON.parse(localStorage.getItem(K)||'null');if(x){
   Object.assign(S,x.S||{});spins=x.spins||[];ts=x.ts||[];dailyStopDate=x.dailyStopDate||null;
   if(x.plDate&&x.plDate!==localDateKey()){pl=0;bank=[];plDate=x.plDate;}
-  else{pl=x.pl||0;bank=x.bank||[];plDate=x.plDate||localDateKey();}
+  else{pl=x.pl||0;bank=(x.bank||[]).map(e=>typeof e==='number'?{pl:e,stop:null}:e);plDate=x.plDate||localDateKey();}
 }}catch(e){}
 if(ts.length!==spins.length)ts=spins.map(()=>0);
 const save=()=>{try{localStorage.setItem(K,JSON.stringify({S,spins,ts,pl,bank,dailyStopDate,plDate}))}catch(e){}};
@@ -177,22 +177,24 @@ const pct=(x,d=1)=>(x*100).toFixed(d)+'%';
 
 /* ---------- input ---------- */
 const pad=$('pad');
-const g0=document.createElement('button');g0.textContent='0 (Green)';g0.className='g';g0.onclick=()=>addSpin(0);pad.appendChild(g0);
-for(let n=1;n<=36;n++){const b=document.createElement('button');b.textContent=n;b.className=colorOf(n);b.onclick=()=>addSpin(n);pad.appendChild(b);}
+const g0=document.createElement('button');g0.textContent='0 (Green)';g0.className='g';g0.addEventListener('click',()=>addSpin(0));pad.appendChild(g0);
+for(let n=1;n<=36;n++){const b=document.createElement('button');b.textContent=n;b.className=colorOf(n);b.addEventListener('click',()=>addSpin(n));pad.appendChild(b);}
 
 function addSpin(n){if(stoppedForToday())return;spins.push(n);ts.push(Date.now());if(spins.length>CAP){spins.shift();ts.shift();}save();render();}
-function undoSpin(){if(stoppedForToday()||!spins.length)return;spins.pop();ts.pop();save();render();}
+// Undo stays available even when locked, so a mis-tap can always be corrected
+function undoSpin(){if(!spins.length)return;spins.pop();ts.pop();save();render();}
 function clearAll(){if(stoppedForToday()||!spins.length||!confirm('Clear ALL spins, stats and prediction history?'))return;spins=[];ts=[];save();render();}
 
 function nextBet(){rollDailyState();return stoppedForToday()||pl<=-S.stop?0:S.base;}
-function logBank(k){if(stoppedForToday())return;const b=nextBet();if(b<=0)return;bank.push(pl);pl=k==='w'?pl+b:pl-b;if(k==='w')dailyStopDate=localDateKey();save();render();}
-function undoBank(){if(stoppedForToday()||!bank.length)return;pl=bank.pop();save();render();}
+function logBank(k){if(stoppedForToday())return;const b=nextBet();if(b<=0)return;bank.push({pl,stop:dailyStopDate});pl=k==='w'?pl+b:pl-b;if(k==='w')dailyStopDate=localDateKey();save();render();}
+// Undoing the win that triggered the lock also removes the lock
+function undoBank(){if(!bank.length)return;const e=bank.pop();pl=e.pl;dailyStopDate=e.stop;save();render();}
 function resetBank(){if(stoppedForToday())return;pl=0;bank=[];save();render();}
 
 document.addEventListener('click',e=>{
   if(!(e.target instanceof Element))return;
   const button=e.target.closest('[data-action]');
-  if(!button)return;
+  if(!button||button.disabled)return;
   switch(button.dataset.action){
     case'undo-spin':undoSpin();break;
     case'clear-spins':clearAll();break;
@@ -251,10 +253,13 @@ function verdict(h,n,p0,minN){
 }
 
 /* ---------- render ---------- */
+const OPEN_WHEN_LOCKED=['undo-spin','undo-bank'];
 function render(){
   rollDailyState();
-  for(const id of['minSpins','win','base','stop'])$(id).value=S[id];
-  $('flow').value=S.flow;$('view').value=S.view;
+  // don't overwrite a field the user is typing in
+  for(const id of['minSpins','win','base','stop'])if(document.activeElement!==$(id))$(id).value=S[id];
+  if(document.activeElement!==$('flow'))$('flow').value=S.flow;
+  if(document.activeElement!==$('view'))$('view').value=S.view;
 
   // slots
   let h=`<div class="slot blank">NEXT<small>OPEN</small></div>`;
@@ -272,7 +277,7 @@ function render(){
   $('bet').textContent=b===0?'STOP':b;
   $('pl').textContent=(pl>=0?'+₹':'-₹')+Math.abs(pl);$('pl').className=pl>=0?'pos':'neg';
   for(const button of pad.querySelectorAll('button'))button.disabled=locked;
-  for(const button of document.querySelectorAll('[data-action]'))button.disabled=locked;
+  for(const button of document.querySelectorAll('[data-action]'))button.disabled=locked&&!OPEN_WHEN_LOCKED.includes(button.dataset.action);
   $('evLoss').textContent=`Maths: every even-money bet loses 2.70% on average, about ₹${(S.base/37).toFixed(2)} per ₹${S.base} spin. No pattern or staking plan changes this.`;
 
   // evaluation
@@ -288,7 +293,7 @@ function render(){
 
   // summary
   const big=$('big'),why=$('why');
-  if(locked){big.textContent='STOP FOR TODAY';big.className='daily-stop';why.textContent='You logged a win today. Spin entry and bankroll controls are locked until tomorrow; your history and stats remain available.';}
+  if(locked){big.textContent='STOP FOR TODAY';big.className='daily-stop';why.textContent='You logged a win today. New spins and bets are locked until tomorrow. Undo buttons still work in case of a mis-tap; history and stats stay available.';}
   else if(b===0){big.textContent='STOP-LOSS REACHED';big.className='neg';why.textContent='Stop-loss hit. Stop betting; reset P/L only when you start a fresh session.';}
   else{big.textContent='NO RELIABLE PICK';big.className='warn';why.textContent='Roulette spins are independent. Past results cannot reliably predict the next spin: an even-money bet wins 18/37 (48.65%); any exact number wins 1/37 (2.70%). Historical patterns are for testing only, not betting signals.';}
   $('verdictLine').innerHTML=`Engine check: <span class="${sv.c}">${sv.t}</span>`;
@@ -328,7 +333,8 @@ function render(){
   }).join('')||'<tr><td colspan="6" class="mute">No graded guesses yet.</td></tr>';
 }
 render();
-setInterval(render,60000);
+// only refresh at midnight rollover, so typing in settings is never interrupted
+setInterval(()=>{if(plDate!==localDateKey())render();},60000);
 </script>
 </body>
 </html>
