@@ -33,6 +33,12 @@ button:active{transform:scale(.97)}
 .pad button.g{grid-column:span 6;background:#144d31;border-color:var(--grn);color:#9ef5c5}
 .row{display:flex;gap:8px;margin-top:8px}.row button{flex:1;padding:11px 6px;font-size:14px;background:transparent;color:var(--mute)}
 .ok{color:#4cc38a}.no{color:#e5534b}
+.guide h2{font-size:16px;margin:0 0 6px;color:var(--gold)}
+.guide ol{margin:0;padding-left:22px}
+.guide li+li{margin-top:5px}
+.footer{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:6px 2px 14px}
+.footer .mute{margin-top:0}
+.brand{color:var(--gold);font-size:13px;font-weight:800;white-space:nowrap;margin-left:auto}
 </style>
 </head>
 <body>
@@ -46,6 +52,17 @@ button:active{transform:scale(.97)}
   <div class="mute" id="acc"></div>
 </div>
 
+<div class="box guide">
+  <h2>How to use</h2>
+  <ol>
+    <li>Enter at least 10 past spins to see the model's pick.</li>
+    <li>Keep entering every next result to test and track the picks without betting.</li>
+    <li>This is only a strategy for tracking patterns, not a reliable prediction. A correct guess does not make the next spin more likely; roulette spins are independent and results are never guaranteed.</li>
+    <li>If you choose to play, set a limit and stop after one profitable session. Don't chase wins or losses, and don't get greedy.</li>
+  </ol>
+  <div class="mute">An even-money bet wins 18/37 times (48.65%) on a European wheel; zero loses. Use this page for tracking only.</div>
+</div>
+
 <div class="box">
   <div class="top"><span><b>OPEN SLOT</b> (left) → last 10 spins, newest first</span></div>
   <div class="slots" id="slots"></div>
@@ -56,7 +73,10 @@ button:active{transform:scale(.97)}
   </div>
 </div>
 
-<div class="mute" style="text-align:center;margin:6px 0 14px">Your entries stay on this device only. Nothing is sent or stored online.</div>
+<footer class="footer">
+  <div class="mute">Privacy: spin entries are saved in this browser on this device and this page does not send them to a server.</div>
+  <div class="brand">SansRoulettev07</div>
+</footer>
 
 <script>
 const $=id=>document.getElementById(id),K='rfm_v5',CAP=2000,NEED=10,WIN=50;
